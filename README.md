@@ -147,6 +147,197 @@ in a separate `pwsh` process for every behavioral case, validates standard outpu
 and exit codes, and removes test artifacts in a `finally` block. It uses no
 Pester installation or external PowerShell module.
 
+## Test coverage
+
+The test runner currently executes 45 tests. Each production-script test starts a
+new child `pwsh` process so that parameter handling, standard output, and the
+process exit code are exercised in the same way as an external caller. The test
+names printed by the runner are shown in bold below.
+
+### Cue generation and rounding
+
+The basic generation example starts with this header-only file:
+
+```vtt
+WEBVTT
+```
+
+It invokes the script with duration `13.2` and interval `6`. The values round to
+14 and 6 seconds, so the expected replacement is:
+
+```vtt
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:06.000
+⁠
+
+2
+00:00:06.000 --> 00:00:12.000
+⁠
+
+3
+00:00:12.000 --> 00:00:14.000
+⁠
+```
+
+Each apparently blank payload line above contains one actual U+2060 WORD JOINER.
+
+- **production script exists** checks that `Normalize-WebVtt.ps1` is present as a
+  regular file before the behavioral cases run.
+- **header-only file generates three cues** checks the complete example above,
+  including exit code `0`, `RESULT=0`, three contiguous cues, final time
+  `00:00:14.000`, UTF-8 without BOM, LF endings, sequential identifiers, and one
+  WORD JOINER per cue.
+- **exact duration and interval generate three cues** uses duration `18` and
+  interval `6` and expects exactly `0–6`, `6–12`, and `12–18`.
+- **fractional duration rounds upward** uses duration `61.01` and interval `6`,
+  expects a 62-second timeline with 11 cues, and checks that the last cue ends at
+  `00:01:02.000`.
+- **fractional cue interval rounds upward** uses duration `20` and interval
+  `6.01`; the interval becomes 7, producing `0–7`, `7–14`, and `14–20`.
+- **cue interval longer than video generates one cue** uses duration `5.2` and
+  interval `30`; the duration becomes 6 and one cue covers `0–6` without
+  extending to 30 seconds.
+- **duration over 24 hours does not wrap** uses duration `90001` and interval
+  `90000`, then checks for the final timestamp `25:00:01.000` rather than a
+  wrapped one-hour timestamp.
+
+For every generated timeline, the shared assertions also prove that each start
+is less than its end, every cue begins at the preceding cue's end, there are no
+gaps or overlaps, no cue exceeds the rounded interval, and the last cue ends at
+the rounded duration.
+
+### Existing cues and non-cue blocks
+
+These three valid timing forms must make the script return `RESULT=0` without
+changing either the file bytes or its modification timestamp:
+
+```vtt
+00:00:01.000 --> 00:00:04.000
+00:00:01.000 --> 00:00:04.000 align:start line:90%
+00:01.000 --> 00:04.000
+```
+
+- **existing long-form timed cue is untouched** checks the first timing form,
+  including a numeric cue identifier and visible payload.
+- **existing cue with settings is untouched** checks that settings after the end
+  timestamp do not prevent cue recognition.
+- **existing short-form timed cue is untouched** checks the `MM:SS.mmm` form.
+- **CRLF cue detection preserves file** uses a timed VTT with Windows CRLF line
+  endings and confirms that recognizing it does not normalize or rewrite it.
+
+Metadata and arbitrary arrows are deliberately not treated as cues. For example,
+this file has no valid timing line and must be replaced with generated cues:
+
+```vtt
+WEBVTT
+
+NOTE this --> that
+
+identifier
+payload --> text
+```
+
+- **NOTE-only file is replaced** uses `NOTE No captions were supplied.` and
+  confirms that a comment is not a timed cue.
+- **STYLE-only file is replaced** uses a `STYLE` block containing a `::cue` rule
+  and confirms that styling metadata does not suppress generation.
+- **REGION-only file is replaced** uses a `REGION` block with `id` and `width`
+  settings and confirms that region metadata does not suppress generation.
+- **text containing arrow is not a cue** checks the illustrated `NOTE` and payload
+  arrows; the literal `-->` is insufficient without valid timestamps.
+
+### Input and numeric validation
+
+Every validation failure must exit with code `1` and emit exactly one
+`RESULT=<message>` line. Representative expectations are:
+
+```text
+missing.vtt  -> RESULT=VTT file does not exist: ...missing.vtt
+duration 0   -> RESULT=DurationSeconds must be greater than zero
+duration abc -> RESULT=DurationSeconds must be a valid invariant-culture number...
+interval NaN -> RESULT=CueIntervalSeconds must be a finite number
+```
+
+- **missing file reports actual error** supplies a nonexistent path and checks
+  that the real path appears in the error message.
+- **whitespace VTT path fails through RESULT contract** supplies three spaces and
+  expects `VttPath must not be empty` rather than parameter-binding noise.
+- **directory path is rejected as not a regular file** supplies an existing
+  directory and expects a regular-file validation error.
+- **invalid header fails** starts the file with ` WEBVTT`; the leading space must
+  produce `RESULT=Invalid WEBVTT header`.
+- **zero video duration** checks that `0` is rejected.
+- **negative video duration** checks that `-1` is rejected.
+- **invalid video duration** checks that `abc` is rejected as nonnumeric.
+- **NaN video duration** checks that `NaN` is rejected as non-finite.
+- **infinite video duration** checks that `Infinity` is rejected as non-finite.
+- **duration beyond safe range is rejected** checks that `315360001` exceeds the
+  supported 315,360,000-second limit.
+- **cue interval beyond safe range is rejected** applies the same upper-bound
+  check to an interval of `315360001`.
+- **zero cue interval** checks that interval `0` is rejected.
+- **negative cue interval** checks that interval `-1` is rejected.
+- **invalid cue interval** checks that interval `abc` is rejected as nonnumeric.
+- **NaN cue interval** checks that interval `NaN` is rejected as non-finite.
+- **infinite cue interval** checks that interval `-Infinity` is rejected as
+  non-finite.
+
+### Culture, paths, and encoding
+
+- **invariant culture accepts period decimal** runs the child process under
+  `fr-FR` culture with duration `61.5` and interval `6.5`. It expects invariant
+  parsing, rounded values 62 and 7, and nine cues.
+- **invariant culture rejects comma decimal** uses `61,5` under the same `fr-FR`
+  culture and expects a numeric-format failure. The machine culture must not turn
+  the comma into a valid decimal separator.
+- **path containing spaces works** generates a file at
+  `directory with spaces/file with spaces.vtt` and processes it in place.
+- **Unicode path works** uses `vidéo 字/captïons 日.vtt` to exercise non-ASCII
+  directory and file names.
+- **UTF-8 BOM input produces BOM-free output** begins with the byte sequence
+  `EF BB BF` before `WEBVTT`, confirms the header is accepted, and checks that the
+  generated replacement no longer has a BOM.
+- **header without trailing newline generates cues** supplies exactly the six
+  characters `WEBVTT` with no line ending and confirms successful generation.
+
+### Header and timing-line parsing
+
+The accepted first-line forms include:
+
+```text
+WEBVTT
+WEBVTT Generated upstream
+WEBVTT<TAB>Generated upstream
+```
+
+- **header text after signature is accepted** checks the second form.
+- **tab after signature is accepted** checks the third form with an actual tab
+  between the signature and descriptive text.
+- **signature suffix without whitespace is rejected** uses `WEBVTTINVALID` and
+  expects `RESULT=Invalid WEBVTT header`.
+- **invalid timestamp ranges are not cues** uses
+  `00:60.000 --> 00:61.000`; because valid minutes and seconds are `00–59`, the
+  line must not count as a cue and the file is replaced.
+
+### Output, replacement cleanup, and batch wrapper
+
+- **standard output discipline on success and failure** runs one successful case
+  and one invalid-header case. Each must emit exactly one line: `RESULT=0` with
+  exit code `0`, or `RESULT=Invalid WEBVTT header` with exit code `1`.
+- **temporary files are absent after successful replacement** checks the target
+  directory for the normal `.filename.<unique-id>.tmp` pattern after success and
+  expects no matches.
+- **temporary file is cleaned after replacement failure** makes the target
+  directory read-only on macOS or Linux, confirms the child reports one failure
+  line, restores permissions, and checks that no temporary file remains. The test
+  is skipped on platforms where this permission simulation is not used.
+- **batch wrapper has required quoting and no output capture** statically checks
+  for `@echo off`, `%~dp0Normalize-WebVtt.ps1`, `%~1`, `%~2`, `%~3`, and
+  `exit /b %SCRIPT_EXIT_CODE%`. It also rejects `FOR /F`, delayed expansion, and
+  any extra `echo` statement that could alter standard output.
+
 ## Manual Windows wrapper validation
 
 From `cmd.exe`, create or choose a header-only VTT and run:
