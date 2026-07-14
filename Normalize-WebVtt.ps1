@@ -152,7 +152,6 @@ function New-GeneratedWebVtt {
     $builder = New-Object System.Text.StringBuilder
     [void]$builder.Append("WEBVTT`n`n")
     $start = 0L
-    $identifier = 1L
     while ($start -lt $Duration) {
         $remaining = $Duration - $start
         if ($remaining -lt $Interval) {
@@ -162,7 +161,6 @@ function New-GeneratedWebVtt {
             $end = $start + $Interval
         }
 
-        [void]$builder.Append($identifier.ToString($script:InvariantCulture)).Append("`n")
         [void]$builder.Append((Format-WebVttTimestamp $start)).Append(' --> ').Append((Format-WebVttTimestamp $end)).Append("`n")
         [void]$builder.Append([char]0x2060).Append("`n")
         if ($end -lt $Duration) {
@@ -170,7 +168,6 @@ function New-GeneratedWebVtt {
         }
 
         $start = $end
-        $identifier++
     }
 
     return $builder.ToString()

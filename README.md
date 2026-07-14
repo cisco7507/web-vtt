@@ -64,10 +64,11 @@ There is no output-file argument.
   `NOTE`, `STYLE`, and `REGION` metadata is not retained.
 - Invalid input is not normalized.
 
-Generated cues are numbered from 1, are contiguous, and contain one U+2060 WORD
-JOINER as their invisible payload. Output is UTF-8 without a BOM, uses LF line
-endings on every platform, and ends with one newline. Timestamps use
-`HH:MM:SS.mmm`; hours do not wrap after 24.
+Generated cues have no cue identifier lines. They are contiguous and contain one
+U+2060 WORD JOINER as their invisible payload. Output is UTF-8 without a BOM,
+uses LF line endings on every platform, and ends with one newline. Timestamps use
+`HH:MM:SS.mmm`; hours do not wrap after 24. Existing input cues may still include
+identifiers; cue detection supports both forms.
 
 ## Result-variable and exit-code contract
 
@@ -171,15 +172,12 @@ It invokes the script with duration `13.2` and interval `6`. The values round to
 ```vtt
 WEBVTT
 
-1
 00:00:00.000 --> 00:00:06.000
 ⁠
 
-2
 00:00:06.000 --> 00:00:12.000
 ⁠
 
-3
 00:00:12.000 --> 00:00:14.000
 ⁠
 ```
@@ -190,8 +188,8 @@ Each apparently blank payload line above contains one actual U+2060 WORD JOINER.
   regular file before the behavioral cases run.
 - **header-only file generates three cues** checks the complete example above,
   including exit code `0`, `RESULT=0`, three contiguous cues, final time
-  `00:00:14.000`, UTF-8 without BOM, LF endings, sequential identifiers, and one
-  WORD JOINER per cue.
+  `00:00:14.000`, UTF-8 without BOM, LF endings, no cue identifiers, and one WORD
+  JOINER per cue.
 - **exact duration and interval generate three cues** uses duration `18` and
   interval `6` and expects exactly `0–6`, `6–12`, and `12–18`.
 - **fractional duration rounds upward** uses duration `61.01` and interval `6`,

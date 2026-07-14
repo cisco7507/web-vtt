@@ -104,7 +104,7 @@ function Assert-Result {
 
 function Get-GeneratedCue {
     param([string]$Content)
-    $pattern = '(?m)^(?<id>\d+)\n(?<start>\d{2,}:\d{2}:\d{2}\.000) --> (?<end>\d{2,}:\d{2}:\d{2}\.000)\n(?<payload>.)$'
+    $pattern = '(?m)^(?<start>\d{2,}:\d{2}:\d{2}\.000) --> (?<end>\d{2,}:\d{2}:\d{2}\.000)\n(?<payload>.)$'
     return ,@([regex]::Matches($Content, $pattern))
 }
 
@@ -122,6 +122,7 @@ function Assert-GeneratedTimeline {
     Assert-True $content.StartsWith("WEBVTT`n`n") 'Generated file must start with WEBVTT and one blank line'
     Assert-True $content.EndsWith("`n") 'Generated file must end with one newline'
     Assert-True (-not $content.Contains("`r")) 'Generated file must use LF line endings'
+    Assert-True (-not [regex]::IsMatch($content, '(?m)^\d+\n\d{2,}:\d{2}:\d{2}\.000 -->')) 'Generated cues must not contain cue identifiers'
     $cues = Get-GeneratedCue $content
     Assert-Equal $ExpectedCount $cues.Count 'Unexpected cue count'
     $previousEnd = 0L
@@ -129,7 +130,6 @@ function Assert-GeneratedTimeline {
         $cue = $cues[$index]
         $start = Convert-TimestampToSeconds $cue.Groups['start'].Value
         $end = Convert-TimestampToSeconds $cue.Groups['end'].Value
-        Assert-Equal ($index + 1) ([int]$cue.Groups['id'].Value) 'Cue identifiers must be sequential'
         Assert-Equal $previousEnd $start 'Cue timeline contains a gap or overlap'
         Assert-True ($start -lt $end) 'Cue start must precede cue end'
         Assert-True (($end - $start) -le $Interval) 'Cue exceeds rounded interval'
