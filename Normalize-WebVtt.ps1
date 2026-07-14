@@ -184,9 +184,14 @@ function Write-WebVttAtomically {
 
     $directory = [System.IO.Path]::GetDirectoryName($TargetPath)
     $fileName = [System.IO.Path]::GetFileName($TargetPath)
+    $operationId = [Guid]::NewGuid().ToString('N')
     $temporaryPath = [System.IO.Path]::Combine(
         $directory,
-        ".$fileName.$([Guid]::NewGuid().ToString('N')).tmp"
+        ".$fileName.$operationId.tmp"
+    )
+    $backupPath = [System.IO.Path]::Combine(
+        $directory,
+        ".$fileName.$operationId.bak"
     )
     $stream = $null
     $writer = $null
@@ -210,7 +215,10 @@ function Write-WebVttAtomically {
         $stream = $null
 
         if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
-            [System.IO.File]::Replace($temporaryPath, $TargetPath, $null)
+            # Windows PowerShell 5.1 can bind $null to an empty string for this
+            # overload, which .NET rejects as an illegal backup path. A real,
+            # same-directory backup path avoids that binding ambiguity.
+            [System.IO.File]::Replace($temporaryPath, $TargetPath, $backupPath)
         }
         else {
             # This overload is used only on PowerShell 7/.NET on Unix. It maps to a
@@ -227,6 +235,9 @@ function Write-WebVttAtomically {
         }
         if ([System.IO.File]::Exists($temporaryPath)) {
             [System.IO.File]::Delete($temporaryPath)
+        }
+        if ([System.IO.File]::Exists($backupPath)) {
+            [System.IO.File]::Delete($backupPath)
         }
     }
 }

@@ -344,6 +344,12 @@ try {
     else {
         Skip-Test 'temporary file is cleaned after replacement failure' 'Permission simulation is only run by this macOS/Linux harness'
     }
+    Invoke-Test 'Windows replacement uses a legal backup path' {
+        $scriptContent = [System.IO.File]::ReadAllText($productionScript)
+        Assert-True ($scriptContent -notmatch '(?s)File\]::Replace\([^\)]*\$null\)') 'Windows File.Replace must not receive $null as its backup path'
+        Assert-True ($scriptContent -match '(?s)File\]::Replace\(\$temporaryPath,\s*\$TargetPath,\s*\$backupPath\)') 'Windows File.Replace must receive a real backup path'
+        Assert-True ($scriptContent -match '(?s)File\]::Exists\(\$backupPath\).*File\]::Delete\(\$backupPath\)') 'Windows replacement backup must be cleaned up'
+    }
     Invoke-Test 'batch wrapper has required quoting and no output capture' {
         Assert-True (Test-Path -LiteralPath $batchScript -PathType Leaf) 'Normalize-WebVtt.bat is missing'
         $batch = [System.IO.File]::ReadAllText($batchScript)

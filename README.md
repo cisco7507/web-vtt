@@ -123,7 +123,10 @@ directory. The file is flushed and closed before replacement, and cleanup runs
 after success or failure.
 
 - On Windows, `.NET File.Replace` atomically replaces the existing target on the
-  same volume without creating a backup.
+  same volume using a uniquely named backup in the same directory. A real backup
+  path is required to avoid Windows PowerShell 5.1 converting a `$null` string
+  argument into an illegal empty path. The backup is removed immediately through
+  the same guaranteed cleanup path as the temporary file.
 - On macOS under PowerShell 7, `.NET File.Move(source, target, true)` performs the
   overwrite rename with both paths on the same filesystem.
 
@@ -131,7 +134,7 @@ These operations prevent a partially written target on normal local filesystems.
 Atomicity ultimately depends on the filesystem implementation; remote shares and
 special filesystems may provide weaker rename guarantees. If replacement fails,
 the original target remains in place and the utility attempts to remove its
-temporary file.
+temporary and backup files.
 
 ## macOS testing
 
@@ -149,7 +152,7 @@ Pester installation or external PowerShell module.
 
 ## Test coverage
 
-The test runner currently executes 45 tests. Each production-script test starts a
+The test runner currently executes 46 tests. Each production-script test starts a
 new child `pwsh` process so that parameter handling, standard output, and the
 process exit code are exercised in the same way as an external caller. The test
 names printed by the runner are shown in bold below.
@@ -333,6 +336,10 @@ WEBVTT<TAB>Generated upstream
   directory read-only on macOS or Linux, confirms the child reports one failure
   line, restores permissions, and checks that no temporary file remains. The test
   is skipped on platforms where this permission simulation is not used.
+- **Windows replacement uses a legal backup path** statically guards the
+  Windows PowerShell 5.1 regression: `File.Replace` must receive a real
+  same-directory backup path instead of `$null`, and the backup must be deleted
+  during cleanup.
 - **batch wrapper has required quoting and no output capture** statically checks
   for `@echo off`, `%~dp0Normalize-WebVtt.ps1`, `%~1`, `%~2`, `%~3`, and
   `exit /b %SCRIPT_EXIT_CODE%`. It also rejects `FOR /F`, delayed expansion, and
